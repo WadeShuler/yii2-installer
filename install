@@ -1,0 +1,221 @@
+#!/bin/bash
+
+export APP_ROOT=$(pwd)
+
+# ---- useful functions ----
+
+function repeatSymbol {
+    symbol=$1
+    count=$2
+    for ((i=1; i<=count; i++)); do
+        echo -n "="
+    done
+}
+
+function printBanner {
+    message=$1
+    count=$((${#message} + 8))
+
+    printf "\n"
+    printf "\n"
+    repeatSymbol "=" $count
+
+    printf "\n=== $message ===\n"
+
+    repeatSymbol "=" $count
+    printf "\n"
+    printf "\n"
+
+}
+
+
+export DOWNLOAD_METHOD="composer"
+
+echo "Do you want to use Composer or Git to install Yii2?"
+
+echo "[0] Composer (default: just press enter)"
+echo "[1] Git"
+read -p 'Which One? : ' userTool
+
+if [ -z "${userTool// }" ]; then
+    echo "--> You chose to use Composer"
+    DOWNLOAD_METHOD="composer"
+elif [ $userTool == 0 ]; then
+    echo "--> You chose to use Composer"
+    DOWNLOAD_METHOD="composer"
+elif [ $userTool == 1 ]; then
+    echo "--> You chose to use Git"
+    DOWNLOAD_METHOD="git"
+else
+    echo "--> Invalid Choice. Abort!"
+    exit 0
+fi
+
+export GIT_CMD="$(command -v git)"
+export GIT_VERSION="$($GIT_CMD --version)"
+
+export COMPOSER_CMD="$(command -v composer)"
+export COMPOSER_VERSION="$($COMPOSER_CMD --version)"
+
+if [ $DOWNLOAD_METHOD == "composer" ]; then
+
+    # Check if Composer not found
+    if [ -z $COMPOSER_CMD ]; then
+        echo "--> ERROR: Composer not found. Exiting!"
+        exit 0
+    fi
+
+    if [[ $COMPOSER_VERSION == *"Composer version"* ]]; then
+        echo "--> Composer Works";
+    else
+        echo "--> ERROR: Unable to call Composer. Abort!"
+    fi
+
+    echo "--> $COMPOSER_VERSION"
+
+elif [ $DOWNLOAD_METHOD == "git" ]; then
+
+    # Check if Git not found
+    if [ -z $GIT_CMD ]; then
+        echo "--> ERROR: Git not found. Exiting!"
+        exit 0
+    fi
+
+    if [[ $GIT_VERSION == *"git version"* ]]; then
+        echo "--> Git Works";
+    else
+        echo "--> ERROR: Unable to call Git. Abort!"
+        exit 0
+    fi
+
+    echo "--> $GIT_VERSION"
+
+else
+
+    # should not be here
+    echo "--> ERROR: Could not verify a download method. Abort!"
+    exit 0
+
+fi
+
+# ---- setup some default values ----
+
+export YII_BASE_VERSION="2.0.8"
+export YII_BASE_TYPE="basic"
+
+# ---- Start Script ----
+
+printBanner "Yii2 Installer"
+printf "> Created By: Wade Shuler\n\n"
+
+echo "Do you want the 'basic' or 'advanced' Yii2 template?"
+echo "[0] basic"
+echo "[1] advanced"
+read -p 'Which template: ' userAppType
+
+if [ $userAppType == 0 ] || [ $userAppType == 'basic' ]; then
+    echo "--> You chose basic"
+    YII_BASE_TYPE="basic"
+elif [ $userAppType == 1 ] || [ $userAppType == 'advanced' ]; then
+    echo "--> You chose advanced"
+    YII_BASE_TYPE="advanced"
+else
+    echo "--> Invalid Choice. Abort!"
+    exit 0
+fi
+
+# -- Yii Version Choice
+
+echo "Enter the Yii version number you want to use."
+echo "Leave blank (just hit enter) to use current version ($YII_BASE_VERSION)"
+read -p 'Which version: ' userAppVersion
+
+if [ -z "${userAppVersion// }" ]; then
+    echo "--> You chose the current version ($YII_BASE_VERSION)"
+else
+    versionPattern='^([0-9]+\.){0,2}(\*|[0-9]+)$'
+    if [[ $userAppVersion =~ $versionPattern ]]; then
+        echo "--> You chose: $userAppVersion"
+        YII_BASE_VERSION=$userAppVersion
+    else
+        echo "--> Invalid version number!"
+        exit 0
+    fi
+fi
+
+
+# ---- START OF LOGIC ----
+
+
+if [ $DOWNLOAD_METHOD == "composer" ]; then
+
+    if [ $YII_BASE_TYPE == "basic" ]; then
+        $COMPOSER_CMD create-project yiisoft/yii2-app-basic tmp $YII_BASE_VERSION
+    fi
+
+    if [ $YII_BASE_TYPE == "advanced" ]; then
+        $COMPOSER_CMD create-project yiisoft/yii2-app-advanced tmp $YII_BASE_VERSION
+    fi
+
+elif [ $DOWNLOAD_METHOD == "git" ]; then
+
+    if [ $YII_BASE_TYPE == "basic" ]; then
+        $GIT_CMD clone -b $YII_BASE_VERSION --depth 1 https://github.com/yiisoft/yii2-app-basic.git tmp
+    fi
+
+    if [ $YII_BASE_TYPE == "advanced" ]; then
+        $GIT_CMD clone -b $YII_BASE_VERSION --depth 1 https://github.com/yiisoft/yii2-app-advanced.git tmp
+    fi
+
+else
+
+    echo "--> Something went wrong! Couldn't download Yii2 :( )"
+    exit 0
+
+if
+
+if [ ! -d tmp ] && [ ! -f tmp/yii.bat ]; then
+    # Yii app source not found
+    echo "--> Yii application not found. Abort!"
+    exit $?
+fi
+
+if [ -d tmp/.git ]; then
+    rm -rf tmp/.git
+    if [ -d tmp/.git ]; then
+        echo "--> Unable to delete .git directory. Check permissions!"
+    fi
+fi
+
+# move yii source into app root
+echo "--> Moving Yii2 source to app root..."
+cp -rf tmp/. $APP_ROOT
+
+# need to modify gitignore to exclude installer
+if [ -f $APP_ROOT/.gitignore ]; then
+
+    printf "\n# yii2 installer\ninstall\n" >> $APP_ROOT/.gitignore
+
+else
+
+    echo "--> '.gitignore' was not found in root directory."
+    echo "--> You will need to ignore the installer yourself!"
+
+fi
+
+# delete tmp dir
+if [ -d tmp ]; then
+    # tmp directory found, delete it to start fresh
+    rm -rf tmp
+
+    if [ -d tmp ]; then
+        # tmp directory still there
+        echo "--> Could not delete 'tmp' directory for cleanup. Delete it manually and check permissions!"
+    fi
+fi
+
+if [ -f yii.bat ] && [ -d tests ]; then
+    echo "--> Success: Looks like the install process went according to plan :)"
+else
+    echo "--> Error: Something went wrong!"
+fi
