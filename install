@@ -131,8 +131,11 @@ echo "Leave blank (just hit enter) to use current version ($YII_BASE_VERSION)"
 read -p 'Which version: ' userAppVersion
 
 if [ -z "${userAppVersion// }" ]; then
+
     echo "--> You chose the current version ($YII_BASE_VERSION)"
+
 else
+
     versionPattern='^([0-9]+\.){0,2}(\*|[0-9]+)$'
     if [[ $userAppVersion =~ $versionPattern ]]; then
         echo "--> You chose: $userAppVersion"
@@ -141,6 +144,7 @@ else
         echo "--> Invalid version number!"
         exit 0
     fi
+
 fi
 
 
@@ -172,7 +176,7 @@ else
     echo "--> Something went wrong! Couldn't download Yii2 :( )"
     exit 0
 
-if
+fi
 
 if [ ! -d tmp ] && [ ! -f tmp/yii.bat ]; then
     # Yii app source not found
