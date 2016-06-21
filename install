@@ -1,225 +1,436 @@
-#!/bin/bash
+#!/usr/bin/env php
+<?php
+/**
+ * Yii Application Installer Tool
+ *
+ * In order to run in non-interactive mode:
+ *
+ * init --env=Development --overwrite=n
+ *
+ * @author Wade Shuler
+ *
+ * @link https://github.com/WadeShuler
+ * @copyright Copyright (c) 2016 Yii Software LLC
+ * @license http://www.yiiframework.com/license/
+ */
 
-export APP_ROOT=$(pwd)
+// latest known working version ( in case of issues with new releases )
+define('YII_CURRENT_VERSION', '2.0.8');
 
-# ---- useful functions ----
-
-function repeatSymbol {
-    symbol=$1
-    count=$2
-    for ((i=1; i<=count; i++)); do
-        echo -n "="
-    done
+if (!extension_loaded('openssl')) {
+    die('The OpenSSL PHP extension is required by Yii2.');
 }
 
-function printBanner {
-    message=$1
-    count=$((${#message} + 8))
+$params = getParams();
+$root = str_replace('\\', '/', __DIR__);
 
-    printf "\n"
-    printf "\n"
-    repeatSymbol "=" $count
+$templates = [ 'basic', 'advanced' ];
+$templatesList = implode(', ', $templates);     // nice list for messages
 
-    printf "\n=== $message ===\n"
+$installers = ['composer', 'git', 'zip'];
+$installersList = implode(', ', $installers);   // nice list for messages
 
-    repeatSymbol "=" $count
-    printf "\n"
-    printf "\n"
+// add my print banner here
+echo "Yii Application Installer Tool v1.0\n\n";
+
+
+
+// --> Template Selection
+
+
+
+// Choose the template
+$userTemplate = null;
+if ( empty($params['template']) )
+{
+    echo "\nWhich Yii2 application template do you want to install?\n\n";
+
+    foreach ($templates as $i => $name) {
+        echo "  [$i] $name\n";
+    }
+
+    echo "\n  Your choice [0-" . (count($templates) - 1) . ', press enter for "basic", or "q" to quit] ';
+
+    $answer = trim(fgets(STDIN));
+
+    if ( $answer == '' )
+    {
+        // empty, so basic chosen
+        $answer = array_search('basic', $templates);    // find key for 'basic' in $templates array
+        $userTemplate = 'basic';
+
+    } else if (!ctype_digit($answer) || !in_array($answer, range(0, count($templates) - 1))) {
+
+        // unrecognized answer
+        $answer = null;
+        $userTemplate = null;
+        echo "\n  Quit installation.\n";
+        exit(0);
+
+    } else if (isset($templates[$answer])) {
+        $userTemplate = $templates[$answer];
+    }
+
+} else {
+
+    $userTemplate = trim($params['template']);
 
 }
 
-
-export DOWNLOAD_METHOD="composer"
-
-echo "Do you want to use Composer or Git to install Yii2?"
-
-echo "[0] Composer (default: just press enter)"
-echo "[1] Git"
-read -p 'Which One? : ' userTool
-
-if [ -z "${userTool// }" ]; then
-    echo "--> You chose to use Composer"
-    DOWNLOAD_METHOD="composer"
-elif [ $userTool == 0 ]; then
-    echo "--> You chose to use Composer"
-    DOWNLOAD_METHOD="composer"
-elif [ $userTool == 1 ]; then
-    echo "--> You chose to use Git"
-    DOWNLOAD_METHOD="git"
-else
-    echo "--> Invalid Choice. Abort!"
-    exit 0
-fi
-
-export GIT_CMD="$(command -v git)"
-export GIT_VERSION="$($GIT_CMD --version)"
-
-export COMPOSER_CMD="$(command -v composer)"
-export COMPOSER_VERSION="$($COMPOSER_CMD --version)"
-
-if [ $DOWNLOAD_METHOD == "composer" ]; then
-
-    # Check if Composer not found
-    if [ -z $COMPOSER_CMD ]; then
-        echo "--> ERROR: Composer not found. Exiting!"
-        exit 0
-    fi
-
-    if [[ $COMPOSER_VERSION == *"Composer version"* ]]; then
-        echo "--> Composer Works";
-    else
-        echo "--> ERROR: Unable to call Composer. Abort!"
-    fi
-
-    echo "--> $COMPOSER_VERSION"
-
-elif [ $DOWNLOAD_METHOD == "git" ]; then
-
-    # Check if Git not found
-    if [ -z $GIT_CMD ]; then
-        echo "--> ERROR: Git not found. Exiting!"
-        exit 0
-    fi
-
-    if [[ $GIT_VERSION == *"git version"* ]]; then
-        echo "--> Git Works";
-    else
-        echo "--> ERROR: Unable to call Git. Abort!"
-        exit 0
-    fi
-
-    echo "--> $GIT_VERSION"
-
-else
-
-    # should not be here
-    echo "--> ERROR: Could not verify a download method. Abort!"
-    exit 0
-
-fi
-
-# ---- setup some default values ----
-
-export YII_BASE_VERSION="2.0.8"
-export YII_BASE_TYPE="basic"
-
-# ---- Start Script ----
-
-printBanner "Yii2 Installer"
-printf "> Created By: Wade Shuler\n\n"
-
-echo "Do you want the 'basic' or 'advanced' Yii2 template?"
-echo "[0] basic"
-echo "[1] advanced"
-read -p 'Which template: ' userAppType
-
-if [ $userAppType == 0 ] || [ $userAppType == 'basic' ]; then
-    echo "--> You chose basic"
-    YII_BASE_TYPE="basic"
-elif [ $userAppType == 1 ] || [ $userAppType == 'advanced' ]; then
-    echo "--> You chose advanced"
-    YII_BASE_TYPE="advanced"
-else
-    echo "--> Invalid Choice. Abort!"
-    exit 0
-fi
-
-# -- Yii Version Choice
-
-echo "Enter the Yii version number you want to use."
-echo "Leave blank (just hit enter) to use current version ($YII_BASE_VERSION)"
-read -p 'Which version: ' userAppVersion
-
-if [ -z "${userAppVersion// }" ]; then
-
-    echo "--> You chose the current version ($YII_BASE_VERSION)"
-
-else
-
-    versionPattern='^([0-9]+\.){0,2}(\*|[0-9]+)$'
-    if [[ $userAppVersion =~ $versionPattern ]]; then
-        echo "--> You chose: $userAppVersion"
-        YII_BASE_VERSION=$userAppVersion
-    else
-        echo "--> Invalid version number!"
-        exit 0
-    fi
-
-fi
+// template failsafe
+if ( ! validateTemplate($userTemplate, $templates) ) {
+    exit("\n  $userTemplate is not a valid template. Try one of the following: $templatesList. \n");
+}
 
 
-# ---- START OF LOGIC ----
+
+// --> Version Selection
 
 
-if [ $DOWNLOAD_METHOD == "composer" ]; then
 
-    if [ $YII_BASE_TYPE == "basic" ]; then
-        $COMPOSER_CMD create-project yiisoft/yii2-app-basic tmp $YII_BASE_VERSION
-    fi
+// choose version number
+$userVersion = null;
+if (empty($params['version']))
+{
+    echo "\nWhich Yii2 application version do you want to install?\n";
 
-    if [ $YII_BASE_TYPE == "advanced" ]; then
-        $COMPOSER_CMD create-project yiisoft/yii2-app-advanced tmp $YII_BASE_VERSION
-    fi
+    echo "\n  Type a version number [press enter for latest (" . YII_CURRENT_VERSION . "), or \"q\" to quit] ";
 
-elif [ $DOWNLOAD_METHOD == "git" ]; then
+    $answer = trim(fgets(STDIN));
 
-    if [ $YII_BASE_TYPE == "basic" ]; then
-        $GIT_CMD clone -b $YII_BASE_VERSION --depth 1 https://github.com/yiisoft/yii2-app-basic.git tmp
-    fi
+     if ( $answer == '' ) {
 
-    if [ $YII_BASE_TYPE == "advanced" ]; then
-        $GIT_CMD clone -b $YII_BASE_VERSION --depth 1 https://github.com/yiisoft/yii2-app-advanced.git tmp
-    fi
+        // enter (latest version)
+        $userVersion = YII_CURRENT_VERSION;
 
-else
+    } else if ( $answer == strtolower('q') ) {
 
-    echo "--> Something went wrong! Couldn't download Yii2 :( )"
-    exit 0
+            // q (quit) was entered
+            $answer = null;
+            $userVersion = null;
+            echo "\n  Quit installation.\n";
+            exit(0);
 
-fi
+    } else {
 
-if [ ! -d tmp ] && [ ! -f tmp/yii.bat ]; then
-    # Yii app source not found
-    echo "--> Yii application not found. Abort!"
-    exit $?
-fi
+        // not empty, not a 'q', must be a version (we handle validation later)
+        $userVersion = $answer;
+    }
 
-if [ -d tmp/.git ]; then
-    rm -rf tmp/.git
-    if [ -d tmp/.git ]; then
-        echo "--> Unable to delete .git directory. Check permissions!"
-    fi
-fi
+} else {
 
-# move yii source into app root
-echo "--> Moving Yii2 source to app root..."
-cp -rf tmp/. $APP_ROOT
+    $userVersion = trim($params['version']);
 
-# need to modify gitignore to exclude installer
-if [ -f $APP_ROOT/.gitignore ]; then
+}
 
-    printf "\n# yii2 installer\ninstall\n" >> $APP_ROOT/.gitignore
+// version failsafe
+if ( ! validateVersion($userVersion) ) {
+    exit("\n The version you entered is greater than the current tested version, and is not supported!\n");
+}
 
-else
 
-    echo "--> '.gitignore' was not found in root directory."
-    echo "--> You will need to ignore the installer yourself!"
 
-fi
+// --> Installer Selection
 
-# delete tmp dir
-if [ -d tmp ]; then
-    # tmp directory found, delete it to start fresh
-    rm -rf tmp
 
-    if [ -d tmp ]; then
-        # tmp directory still there
-        echo "--> Could not delete 'tmp' directory for cleanup. Delete it manually and check permissions!"
-    fi
-fi
 
-if [ -f yii.bat ] && [ -d tests ]; then
-    echo "--> Success: Looks like the install process went according to plan :)"
-else
-    echo "--> Error: Something went wrong!"
-fi
+// choose install method
+$userInstaller = null;
+if ( empty($params['installer']) )
+{
+    echo "\nWhich install method do you want to use?\n\n";
+
+    foreach ($installers as $i => $name) {
+        echo "  [$i] $name\n";
+    }
+
+    echo "\n  Your choice [0-" . (count($installers) - 1) . ', press enter for "composer", or "q" to quit] ';
+
+    $answer = trim(fgets(STDIN));
+
+    if ( $answer == '' )
+    {
+        // empty, so composer chosen
+        $answer = array_search('composer', $installers);    // find key for 'composer' in $installers array
+        $userInstaller = 'composer';
+
+    } else if (!ctype_digit($answer) || !in_array($answer, range(0, count($installers) - 1))) {
+
+        // unrecognized answer
+        $answer = null;
+        $userInstaller = null;
+        echo "\n  Quit installation.\n";
+        exit(0);
+
+    } else if (isset($installers[$answer])) {
+        $userInstaller = $installers[$answer];
+    }
+
+} else {
+
+    $userInstaller = trim($params['installer']);
+
+}
+
+// installer failsafe
+if ( ! validateInstaller($userInstaller, $installers) ) {
+    exit("\n  $userInstaller is not a valid template. Try one of the following: $installersList. \n");
+}
+
+
+
+// --> Review Options
+
+
+
+echo "\n\nYour Choices\n\n";
+echo " Template: $userTemplate\n";
+echo " Version: $userVersion\n";
+echo " Installer: $userInstaller\n\n";
+
+
+// confirm choices
+$userConfirm = null;
+if (empty($params['confirm']))
+{
+    echo "\nDo you want to continue with these choices? (yes, no, or quit)\n\n";
+
+    $answer = trim(fgets(STDIN));
+
+     if ( $answer == '' || $answer == strtolower('y') || $answer == strtolower('yes') ) {
+
+        // enter (latest version)
+        $userConfirm = true;
+
+    } else if ( $answer == strtolower('n') || $answer == strtolower('no') || $answer == strtolower('q') || $answer == strtolower('quit') ) {
+
+            // no, n, q, or quit was entered
+            $answer = null;
+            $userConfirm = null;
+            echo "\n  Quit installation.\n";
+            exit(0);
+
+    } else {
+
+        // invalid option
+        $answer = null;
+        $userConfirm = null;
+        echo "\n  Quit installation.\n";
+        exit(0);
+    }
+
+} else {
+
+    $userConfirm = trim($params['confirm']);
+
+}
+
+if ( ! validateUserConfirm($userConfirm) ) {
+    echo "\n Quit installation.\n";
+}
+
+echo "\n\nConfirmed, lets go!\n\n";
+
+exit;
+
+
+// -------- LEFT OFF HERE ---------
+
+// user interaction complete
+// now have to actually make it do something :)
+
+
+
+
+
+
+
+// -- Functions ---
+
+function getFileList($root, $basePath = '')
+{
+    $files = [];
+    $handle = opendir($root);
+    while (($path = readdir($handle)) !== false) {
+        if ($path === '.git' || $path === '.svn' || $path === '.' || $path === '..') {
+            continue;
+        }
+        $fullPath = "$root/$path";
+        $relativePath = $basePath === '' ? $path : "$basePath/$path";
+        if (is_dir($fullPath)) {
+            $files = array_merge($files, getFileList($fullPath, $relativePath));
+        } else {
+            $files[] = $relativePath;
+        }
+    }
+    closedir($handle);
+    return $files;
+}
+
+function copyFile($root, $source, $target, &$all, $params)
+{
+    if (!is_file($root . '/' . $source)) {
+        echo "       skip $target ($source not exist)\n";
+        return true;
+    }
+    if (is_file($root . '/' . $target)) {
+        if (file_get_contents($root . '/' . $source) === file_get_contents($root . '/' . $target)) {
+            echo "  unchanged $target\n";
+            return true;
+        }
+        if ($all) {
+            echo "  overwrite $target\n";
+        } else {
+            echo "      exist $target\n";
+            echo "            ...overwrite? [Yes|No|All|Quit] ";
+
+
+            $answer = !empty($params['overwrite']) ? $params['overwrite'] : trim(fgets(STDIN));
+            if (!strncasecmp($answer, 'q', 1)) {
+                return false;
+            } else {
+                if (!strncasecmp($answer, 'y', 1)) {
+                    echo "  overwrite $target\n";
+                } else {
+                    if (!strncasecmp($answer, 'a', 1)) {
+                        echo "  overwrite $target\n";
+                        $all = true;
+                    } else {
+                        echo "       skip $target\n";
+                        return true;
+                    }
+                }
+            }
+        }
+        file_put_contents($root . '/' . $target, file_get_contents($root . '/' . $source));
+        return true;
+    }
+    echo "   generate $target\n";
+    @mkdir(dirname($root . '/' . $target), 0777, true);
+    file_put_contents($root . '/' . $target, file_get_contents($root . '/' . $source));
+    return true;
+}
+
+function getParams()
+{
+    $rawParams = [];
+    if (isset($_SERVER['argv'])) {
+        $rawParams = $_SERVER['argv'];
+        array_shift($rawParams);
+    }
+
+    $params = [];
+    foreach ($rawParams as $param) {
+        if (preg_match('/^--(\w+)(=(.*))?$/', $param, $matches)) {
+            $name = $matches[1];
+            $params[$name] = isset($matches[3]) ? $matches[3] : true;
+        } else {
+            $params[] = $param;
+        }
+    }
+    return $params;
+}
+
+function setWritable($root, $paths)
+{
+    foreach ($paths as $writable) {
+        if (is_dir("$root/$writable")) {
+            echo "      chmod 0777 $writable\n";
+            @chmod("$root/$writable", 0777);
+        } else {
+            echo "\n  Error. Directory $writable does not exist. \n";
+        }
+    }
+}
+
+function setExecutable($root, $paths)
+{
+    foreach ($paths as $executable) {
+        echo "      chmod 0755 $executable\n";
+        @chmod("$root/$executable", 0755);
+    }
+}
+
+function setCookieValidationKey($root, $paths)
+{
+    foreach ($paths as $file) {
+        echo "   generate cookie validation key in $file\n";
+        $file = $root . '/' . $file;
+        $length = 32;
+        $bytes = openssl_random_pseudo_bytes($length);
+        $key = strtr(substr(base64_encode($bytes), 0, $length), '+/=', '_-.');
+        $content = preg_replace('/(("|\')cookieValidationKey("|\')\s*=>\s*)(""|\'\')/', "\\1'$key'", file_get_contents($file));
+        file_put_contents($file, $content);
+    }
+}
+
+function createSymlink($root, $links) {
+    foreach ($links as $link => $target) {
+        echo "      symlink " . $root . "/" . $target . " " . $root . "/" . $link . "\n";
+        //first removing folders to avoid errors if the folder already exists
+        @rmdir($root . "/" . $link);
+        //next removing existing symlink in order to update the target
+        if (is_link($root . "/" . $link)) {
+            @unlink($root . "/" . $link);
+        }
+        @symlink($root . "/" . $target, $root . "/" . $link);
+    }
+}
+
+// --> Added Functions (diff from old init)
+
+function countVersionDots($version)
+{
+    return substr_count($version, '.');
+}
+
+function compareYiiVersions($checkVersion, $yiiVersion, $operator = '>')
+{
+    $numDotsVersion = countVersionDots($checkVersion);
+    $numDotsVersionYii = countVersionDots($yiiVersion);
+
+    $diff = 0;
+    if ( $numDotsVersion < $numDotsVersionYii ) {
+        $diff = $numDotsVersionYii - $numDotsVersion;
+
+        for ( $i = 0; $i <= $diff; $i++ ) {
+            $checkVersion .= '.0';
+        }
+    }
+
+    if ( $numDotsVersion > $numDotsVersionYii ) {
+        $diff = $numDotsVersion - $numDotsVersionYii;
+        for ( $i = 0; $i < $diff; $i++ ) {
+            $yiiVersion .= '.0';
+        }
+    }
+
+    if ( countVersionDots($checkVersion) != countVersionDots($yiiVersion) ) {
+        exit("\n Unable to validate version number!\n\n");
+    }
+
+    return version_compare($checkVersion, $yiiVersion, $operator);
+
+}
+
+function validateTemplate($userTemplate, $templates)
+{
+    return in_array($userTemplate, $templates) ? true : false;
+}
+
+// validate version number: if user version greater than tested Yii version
+// @TODO Maybe replace with more efficient version validation
+function validateVersion($version)
+{
+    return compareYiiVersions($version, YII_CURRENT_VERSION, '>') ? false : true;
+}
+
+function validateInstaller($userInstaller, $installers)
+{
+    return in_array($userInstaller, $installers) ? true : false;
+}
+
+function validateUserConfirm($confirmation)
+{
+    return ( $confirmation === true ) ? true : false;
+}
